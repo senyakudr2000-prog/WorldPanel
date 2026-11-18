@@ -1,17 +1,13 @@
 # WorldPanel
 
-WorldPanel is a NeoForge mod for Minecraft 1.21.1.
+NeoForge mod for Minecraft 1.21.1.
 
-## Planned behavior
-
-- Display the player inventory and open container menus as a camera-facing in-game panel.
-- Keep the panel available while the player moves and looks around.
-- Route mouse and keyboard input to the panel only while the pointer is over it; preserve normal gameplay input elsewhere.
-- Support vanilla containers and aim for compatibility with EMI and JEI.
-- Keep rendering compatible with Android Java launchers, including Zalith Launcher 2.
+The current code wraps vanilla inventory and container screens in a non-pausing screen, forwards movement keys, and uses a centered menu hit area to route mouse input. Camera movement is forwarded when the pointer is outside that area.
 
 ## Build
+Requires Java 21. Run `gradle build`.
 
-The project will use Gradle and GitHub Actions to produce a mod JAR.
+GitHub Actions builds the mod and uploads the JAR as a workflow artifact.
 
-> This repository currently contains project documentation only. A working mod implementation has not yet been committed.
+## Validation status
+The repository contains an initial implementation, not a verified release. The build and in-game behavior still need to be checked on Minecraft 1.21.1. EMI/JEI compatibility, unusual modded container layouts, and Android/Zalith behavior are not yet confirmed.
