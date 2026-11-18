@@ -41,7 +41,11 @@ public final class ClientEvents {
         // Keep the real vanilla screen/menu object. It is rendered on a world-space plane
         // instead of being installed as Minecraft's active fullscreen screen.
         panelScreen = screen;
-        panelScreen.resize(mc, mc.getWindow().getGuiScaledWidth(),
+        // ScreenEvent.Opening fires before Minecraft.setScreen initializes the screen.
+        // Calling resize() here rebuilds widgets while screen.minecraft is still null.
+        // Initialize it explicitly because the vanilla screen will not be installed as
+        // Minecraft's active fullscreen screen (the panel is rendered in the world).
+        panelScreen.init(mc, mc.getWindow().getGuiScaledWidth(),
                 mc.getWindow().getGuiScaledHeight());
 
         var camera = mc.gameRenderer.getMainCamera();
