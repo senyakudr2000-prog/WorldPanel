@@ -22,6 +22,10 @@ public final class ClientEvents {
     private static boolean open;
     private static boolean lastE;
     private static boolean lastEscape;
+    private static boolean mouseButtonHeld;
+    private static int heldButton = -1;
+    private static double heldMouseX;
+    private static double heldMouseY;
     private static final float WORLD_SCALE = 0.0025F;
     private static final double PANEL_DISTANCE = 2.35D;
 
@@ -46,8 +50,9 @@ public final class ClientEvents {
         anchor = camera.getPosition().add(look.scale(PANEL_DISTANCE));
         anchorRotation = new Quaternionf(camera.rotation());
         open = true;
-        lastE = false;
-        lastEscape = false;
+        long window = mc.getWindow().getWindow();
+        lastE = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_E) == GLFW.GLFW_PRESS;
+        lastEscape = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS;
         event.setCanceled(true);
     }
 
@@ -78,14 +83,27 @@ public final class ClientEvents {
 
     @SubscribeEvent
     public static void onMouseButton(InputEvent.MouseButton.Pre event) {
-        if (!open || panelScreen == null || event.getAction() != GLFW.GLFW_PRESS) return;
+        if (!open || panelScreen == null) return;
         if (event.getButton() < 0 || event.getButton() > 2) return;
+
+        if (event.getAction() == GLFW.GLFW_RELEASE && mouseButtonHeld
+                && heldButton == event.getButton()) {
+            event.setCanceled(true);
+            panelScreen.mouseReleased(heldMouseX, heldMouseY, event.getButton());
+            mouseButtonHeld = false;
+            heldButton = -1;
+            return;
+        }
+        if (event.getAction() != GLFW.GLFW_PRESS) return;
 
         double[] point = intersectPanel();
         if (point == null) return;
 
         event.setCanceled(true);
-        panelScreen.mouseClicked(point[0], point[1], event.getButton());
+        heldMouseX = point[0];
+        heldMouseY = point[1];
+        mouseButtonHeld = panelScreen.mouseClicked(point[0], point[1], event.getButton());
+        heldButton = mouseButtonHeld ? event.getButton() : -1;
     }
 
     private static double[] intersectPanel() {
@@ -139,6 +157,8 @@ public final class ClientEvents {
         Minecraft mc = Minecraft.getInstance();
         open = false;
         panelScreen = null;
+        mouseButtonHeld = false;
+        heldButton = -1;
         anchor = null;
         anchorRotation = null;
         if (mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) {
