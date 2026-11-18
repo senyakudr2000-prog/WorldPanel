@@ -2,188 +2,147 @@ package dev.worldpanel.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.InventoryMenu;
-import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
-import net.neoforged.neoforge.client.event.RenderGuiEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
 @EventBusSubscriber(modid = "worldpanel", value = Dist.CLIENT)
 public final class ClientEvents {
+    private static AbstractContainerScreen<?> panelScreen;
+    private static Vec3 anchor;
+    private static Quaternionf anchorRotation;
     private static boolean open;
-    private static AbstractContainerMenu menu;
-    private static net.minecraft.network.chat.Component title;
-    private static int minX, minY, maxX, maxY;
-    private static int panelX, panelY;
-    private static double lastMouseX = Double.NaN;
-    private static double lastMouseY = Double.NaN;
+    private static boolean lastE;
+    private static boolean lastEscape;
+    private static final float WORLD_SCALE = 0.0025F;
+    private static final double PANEL_DISTANCE = 2.35D;
 
     private ClientEvents() {}
 
     @SubscribeEvent
     public static void onScreenOpening(ScreenEvent.Opening event) {
+        if (!(event.getNewScreen() instanceof AbstractContainerScreen<?> screen)) return;
+
         Minecraft mc = Minecraft.getInstance();
-        if (event.getNewScreen() instanceof PauseScreen && open) {
-            event.setCanceled(true);
-            closePanel();
-            return;
-        }
-        if (event.getNewScreen() instanceof AbstractContainerScreen<?> screen) {
-            AbstractContainerMenu nextMenu = screen.getMenu();
-            if (open && nextMenu instanceof InventoryMenu) {
-                event.setCanceled(true);
-                closePanel();
-                return;
-            }
-            menu = nextMenu;
-            title = screen.getTitle();
-            open = true;
-            calculateBounds();
-            event.setCanceled(true);
-            if (mc.mouseHandler.isMouseGrabbed()) mc.mouseHandler.releaseMouse();
-            lastMouseX = lastMouseY = Double.NaN;
-        }
-    }
+        if (mc.player == null || mc.level == null) return;
 
-    private static void calculateBounds() {
-        minX = Integer.MAX_VALUE;
-        minY = Integer.MAX_VALUE;
-        maxX = Integer.MIN_VALUE;
-        maxY = Integer.MIN_VALUE;
-        if (menu == null) return;
-        for (Slot slot : menu.slots) {
-            minX = Math.min(minX, slot.x);
-            minY = Math.min(minY, slot.y);
-            maxX = Math.max(maxX, slot.x + 16);
-            maxY = Math.max(maxY, slot.y + 16);
-        }
-        if (menu.slots.isEmpty()) {
-            minX = minY = 8;
-            maxX = 176;
-            maxY = 166;
-        }
-    }
+        // Keep the real vanilla screen/menu object. It is rendered on a world-space plane
+        // instead of being installed as Minecraft's active fullscreen screen.
+        panelScreen = screen;
+        panelScreen.resize(mc, mc.getWindow().getGuiScaledWidth(),
+                mc.getWindow().getGuiScaledHeight());
 
-    private static int panelWidth() { return maxX - minX + 32; }
-    private static int panelHeight() { return maxY - minY + 54; }
-    private static int slotX(Slot slot) { return panelX + 16 + slot.x - minX; }
-    private static int slotY(Slot slot) { return panelY + 38 + slot.y - minY; }
-
-    private static double mouseX(Minecraft mc) {
-        return mc.mouseHandler.xpos() * mc.getWindow().getGuiScaledWidth() / mc.getWindow().getScreenWidth();
-    }
-    private static double mouseY(Minecraft mc) {
-        return mc.mouseHandler.ypos() * mc.getWindow().getGuiScaledHeight() / mc.getWindow().getScreenHeight();
-    }
-
-    private static boolean inPanel(double x, double y) {
-        return x >= panelX && x < panelX + panelWidth()
-            && y >= panelY && y < panelY + panelHeight();
+        var camera = mc.gameRenderer.getMainCamera();
+        Vec3 look = new Vec3(camera.getLookVector().x, camera.getLookVector().y,
+                camera.getLookVector().z);
+        anchor = camera.getPosition().add(look.scale(PANEL_DISTANCE));
+        anchorRotation = new Quaternionf(camera.rotation());
+        open = true;
+        lastE = false;
+        lastEscape = false;
+        event.setCanceled(true);
     }
 
     @SubscribeEvent
-    public static void renderPanel(RenderGuiEvent.Post event) {
+    public static void renderWorldPanel(RenderLevelStageEvent event) {
+        if (!open || panelScreen == null || anchor == null || anchorRotation == null) return;
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
+
         Minecraft mc = Minecraft.getInstance();
-        if (!open || menu == null || mc.player == null || mc.level == null) return;
-        GuiGraphics g = event.getGuiGraphics();
-        int w = mc.getWindow().getGuiScaledWidth();
-        int h = mc.getWindow().getGuiScaledHeight();
-        panelX = (w - panelWidth()) / 2;
-        panelY = (h - panelHeight()) / 2;
+        if (mc.level == null || mc.player == null) {
+            closePanel();
+            return;
+        }
 
-        g.fill(panelX, panelY, panelX + panelWidth(), panelY + panelHeight(), 0xB80B111A);
-        g.fill(panelX, panelY, panelX + panelWidth(), panelY + 25, 0xE51B2938);
-        g.drawString(mc.font, title == null ? "Inventory" : title.getString(), panelX + 12, panelY + 9, 0xFFFFFFFF, false);
-        g.fill(panelX + 7, panelY + 29, panelX + panelWidth() - 7, panelY + 30, 0x667D9AB5);
+        Vec3 camera = event.getCamera().getPosition();
+        GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
+        graphics.pose().mulPoseMatrix(event.getModelViewMatrix());
+        graphics.pose().translate(anchor.x - camera.x, anchor.y - camera.y,
+                anchor.z - camera.z);
+        graphics.pose().mulPose(anchorRotation);
+        graphics.pose().scale(WORLD_SCALE, -WORLD_SCALE, WORLD_SCALE);
+        graphics.pose().translate(-panelScreen.width / 2.0F, -panelScreen.height / 2.0F, 0.0F);
 
-        int mx = (int) mouseX(mc);
-        int my = (int) mouseY(mc);
-        for (Slot slot : menu.slots) {
-            int x = slotX(slot);
-            int y = slotY(slot);
-            boolean hovered = mx >= x && mx < x + 18 && my >= y && my < y + 18;
-            g.fill(x, y, x + 18, y + 18, hovered ? 0xDD91AFC9 : 0xAA344454);
-            g.fill(x + 1, y + 1, x + 17, y + 17, 0xAA101923);
-            ItemStack stack = slot.getItem();
-            if (!stack.isEmpty()) {
-                g.renderItem(stack, x + 1, y + 1);
-                g.renderItemDecorations(mc.font, stack, x + 1, y + 1);
-            }
-        }
-        ItemStack carried = menu.getCarried();
-        if (!carried.isEmpty()) {
-            g.renderItem(carried, mx - 8, my - 8);
-            g.renderItemDecorations(mc.font, carried, mx - 8, my - 8);
-        }
-        if (inPanel(mx, my)) {
-            for (Slot slot : menu.slots) {
-                int x = slotX(slot), y = slotY(slot);
-                if (mx >= x && mx < x + 18 && my >= y && my < y + 18 && !slot.getItem().isEmpty()) {
-                    g.renderTooltip(mc.font, slot.getItem(), mx, my);
-                    break;
-                }
-            }
-        }
+        panelScreen.renderWithTooltip(graphics, -10000, -10000,
+                event.getPartialTick().getGameTimeDeltaPartialTick(false));
+        graphics.flush();
     }
 
     @SubscribeEvent
     public static void onMouseButton(InputEvent.MouseButton.Pre event) {
-        Minecraft mc = Minecraft.getInstance();
-        if (!open || menu == null || mc.player == null) return;
-        double mx = mouseX(mc), my = mouseY(mc);
-        if (!inPanel(mx, my)) return;
+        if (!open || panelScreen == null || event.getAction() != GLFW.GLFW_PRESS) return;
+        if (event.getButton() < 0 || event.getButton() > 2) return;
+
+        double[] point = intersectPanel();
+        if (point == null) return;
+
         event.setCanceled(true);
-        if (event.getAction() != GLFW.GLFW_PRESS) return;
-        for (Slot slot : menu.slots) {
-            int x = slotX(slot), y = slotY(slot);
-            if (mx >= x && mx < x + 18 && my >= y && my < y + 18) {
-                if (mc.gameMode != null) {
-                    mc.gameMode.handleInventoryMouseClick(menu.containerId, slot.index,
-                        event.getButton(), hasShiftDown(mc) ? net.minecraft.world.inventory.ClickType.QUICK_MOVE
-                            : net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
-                }
-                return;
-            }
-        }
+        panelScreen.mouseClicked(point[0], point[1], event.getButton());
     }
 
-    private static boolean hasShiftDown(Minecraft mc) {
-        return GLFW.glfwGetKey(mc.getWindow().getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
-            || GLFW.glfwGetKey(mc.getWindow().getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+    private static double[] intersectPanel() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gameRenderer == null) return null;
+        var camera = mc.gameRenderer.getMainCamera();
+        Vec3 origin = camera.getPosition();
+        Vector3f directionVector = new Vector3f(camera.getLookVector());
+        Vec3 direction = new Vec3(directionVector.x, directionVector.y, directionVector.z);
+
+        Vector3f normalVector = new Vector3f(0.0F, 0.0F, 1.0F).rotate(anchorRotation);
+        Vec3 normal = new Vec3(normalVector.x, normalVector.y, normalVector.z);
+        double denominator = direction.dot(normal);
+        if (Math.abs(denominator) < 1.0E-5) return null;
+
+        double distance = anchor.subtract(origin).dot(normal) / denominator;
+        if (distance <= 0.0D || distance > 8.0D) return null;
+
+        Vec3 hit = origin.add(direction.scale(distance));
+        Vec3 relative = hit.subtract(anchor);
+        Vector3f local = new Vector3f((float) relative.x, (float) relative.y,
+                (float) relative.z).rotate(new Quaternionf(anchorRotation).invert());
+
+        double x = local.x / WORLD_SCALE + panelScreen.width / 2.0D;
+        double y = -local.y / WORLD_SCALE + panelScreen.height / 2.0D;
+        if (x < 0 || y < 0 || x >= panelScreen.width || y >= panelScreen.height) return null;
+        return new double[] { x, y };
     }
 
     @SubscribeEvent
-    public static void onClientTick(ClientTickEvent.Post event) {
+    public static void onClientTick(net.neoforged.neoforge.client.event.ClientTickEvent.Post event) {
+        if (!open || panelScreen == null) return;
         Minecraft mc = Minecraft.getInstance();
-        if (!open || mc.player == null || mc.screen != null) return;
-        double x = mouseX(mc), y = mouseY(mc);
-        if (!Double.isNaN(lastMouseX) && !inPanel(x, y)) {
-            double dx = x - lastMouseX;
-            double dy = y - lastMouseY;
-            if (Math.abs(dx) + Math.abs(dy) < 120) mc.player.turn(dx * 0.5, dy * 0.5);
+        if (mc.player == null || mc.level == null) {
+            closePanel();
+            return;
         }
-        lastMouseX = x;
-        lastMouseY = y;
+
+        panelScreen.tick();
+        long window = mc.getWindow().getWindow();
+        boolean eDown = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_E) == GLFW.GLFW_PRESS;
+        boolean escapeDown = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS;
+        if ((eDown && !lastE) || (escapeDown && !lastEscape)) {
+            closePanel();
+        }
+        lastE = eDown;
+        lastEscape = escapeDown;
     }
 
     private static void closePanel() {
         Minecraft mc = Minecraft.getInstance();
         open = false;
-        lastMouseX = lastMouseY = Double.NaN;
-        if (mc.player != null && menu != null && menu != mc.player.inventoryMenu) {
+        panelScreen = null;
+        anchor = null;
+        anchorRotation = null;
+        if (mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) {
             mc.player.closeContainer();
         }
-        menu = null;
-        title = null;
-        if (mc.mouseHandler != null && !mc.mouseHandler.isMouseGrabbed()) mc.mouseHandler.grabMouse();
     }
 }
