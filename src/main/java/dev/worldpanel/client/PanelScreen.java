@@ -11,6 +11,8 @@ import org.lwjgl.glfw.GLFW;
 public final class PanelScreen extends Screen {
     private final Screen content;
     private boolean initialized;
+    private double lastMouseX = Double.NaN;
+    private double lastMouseY = Double.NaN;
 
     public PanelScreen(Screen content) {
         super(Component.literal("WorldPanel"));
@@ -39,6 +41,20 @@ public final class PanelScreen extends Screen {
         int hh = Math.min(170, height / 2);
         return x >= width / 2.0 - hw && x <= width / 2.0 + hw
             && y >= height / 2.0 - hh && y <= height / 2.0 + hh;
+    }
+
+    @Override
+    public void mouseMoved(double x, double y) {
+        if (!Double.isNaN(lastMouseX) && !overPanel(x, y)) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) {
+                double sensitivity = mc.options.sensitivity().get();
+                double scale = Math.pow(sensitivity * 0.6 + 0.2, 3.0) * 8.0 * 0.15;
+                mc.player.turn((x - lastMouseX) * scale, (y - lastMouseY) * scale);
+            }
+        }
+        lastMouseX = x;
+        lastMouseY = y;
     }
 
     @Override
