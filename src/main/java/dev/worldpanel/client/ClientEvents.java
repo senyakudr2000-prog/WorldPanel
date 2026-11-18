@@ -5,6 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
+import java.nio.DoubleBuffer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.InputEvent;
@@ -13,6 +14,7 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.system.MemoryStack;
 
 @EventBusSubscriber(modid = "worldpanel", value = Dist.CLIENT)
 public final class ClientEvents {
@@ -20,8 +22,6 @@ public final class ClientEvents {
     private static Vec3 anchor;
     private static Quaternionf anchorRotation;
     private static boolean open;
-    private static boolean lastE;
-    private static boolean lastEscape;
     private static boolean mouseButtonHeld;
     private static int heldButton = -1;
     private static double heldMouseX;
@@ -54,9 +54,6 @@ public final class ClientEvents {
         anchor = camera.getPosition().add(look.scale(PANEL_DISTANCE));
         anchorRotation = new Quaternionf(camera.rotation());
         open = true;
-        long window = mc.getWindow().getWindow();
-        lastE = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_E) == GLFW.GLFW_PRESS;
-        lastEscape = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS;
         event.setCanceled(true);
     }
 
@@ -80,11 +77,10 @@ public final class ClientEvents {
         graphics.pose().scale(WORLD_SCALE, -WORLD_SCALE, WORLD_SCALE);
         graphics.pose().translate(-panelScreen.width / 2.0F, -panelScreen.height / 2.0F, 0.0F);
 
-        double mouseX = mc.mouseHandler.getScaledXPos(mc.getWindow());
-        double mouseY = mc.mouseHandler.getScaledYPos(mc.getWindow());
-        double[] hovered = intersectPanel(mouseX, mouseY);
-        double guiMouseX = hovered == null ? -10000.0D : hovered[0];
-        double guiMouseY = hovered == null ? -10000.0D : hovered[1];
+        double[] cursor = getMouseGuiPosition(mc);
+        double[] hovered = intersectPanel(cursor[0], cursor[1]);
+        int guiMouseX = hovered == null ? -10000 : (int) hovered[0];
+        int guiMouseY = hovered == null ? -10000 : (int) hovered[1];
         panelScreen.renderWithTooltip(graphics, guiMouseX, guiMouseY,
                 event.getPartialTick().getGameTimeDeltaPartialTick(false));
         graphics.flush();
@@ -96,8 +92,9 @@ public final class ClientEvents {
         if (event.getButton() < 0 || event.getButton() > 2) return;
 
         Minecraft mc = Minecraft.getInstance();
-        double mouseX = mc.mouseHandler.getScaledXPos(mc.getWindow());
-        double mouseY = mc.mouseHandler.getScaledYPos(mc.getWindow());
+        double[] cursor = getMouseGuiPosition(mc);
+        double mouseX = cursor[0];
+        double mouseY = cursor[1];
 
         if (event.getAction() == GLFW.GLFW_RELEASE && mouseButtonHeld
                 && heldButton == event.getButton()) {
@@ -119,6 +116,22 @@ public final class ClientEvents {
         heldMouseY = point[1];
         mouseButtonHeld = panelScreen.mouseClicked(point[0], point[1], event.getButton());
         heldButton = mouseButtonHeld ? event.getButton() : -1;
+    }
+
+    private static double[] getMouseGuiPosition(Minecraft mc) {
+        double windowWidth = mc.getWindow().getWidth();
+        double windowHeight = mc.getWindow().getHeight();
+        if (windowWidth <= 0.0D || windowHeight <= 0.0D) return new double[] { 0.0D, 0.0D };
+
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            DoubleBuffer x = stack.mallocDouble(1);
+            DoubleBuffer y = stack.mallocDouble(1);
+            GLFW.glfwGetCursorPos(mc.getWindow().getWindow(), x, y);
+            return new double[] {
+                    x.get(0) * mc.getWindow().getGuiScaledWidth() / windowWidth,
+                    y.get(0) * mc.getWindow().getGuiScaledHeight() / windowHeight
+            };
+        }
     }
 
     private static double[] intersectPanel(double mouseX, double mouseY) {
