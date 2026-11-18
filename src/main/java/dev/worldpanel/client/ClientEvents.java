@@ -102,7 +102,7 @@ public final class ClientEvents {
 
         g.fill(panelX, panelY, panelX + panelWidth(), panelY + panelHeight(), 0xB80B111A);
         g.fill(panelX, panelY, panelX + panelWidth(), panelY + 25, 0xE51B2938);
-        g.drawString(mc.font, title == null ? "Inventory" : title, panelX + 12, panelY + 9, 0xFFFFFFFF, false);
+        g.drawString(mc.font, title == null ? "Inventory" : title.getString(), panelX + 12, panelY + 9, 0xFFFFFFFF, false);
         g.fill(panelX + 7, panelY + 29, panelX + panelWidth() - 7, panelY + 30, 0x667D9AB5);
 
         int mx = (int) mouseX(mc);
