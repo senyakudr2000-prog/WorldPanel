@@ -2,6 +2,7 @@ package dev.worldpanel.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
@@ -69,21 +70,29 @@ public final class ClientEvents {
         }
 
         Vec3 camera = event.getCamera().getPosition();
-        GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
-        graphics.pose().mulPose(event.getModelViewMatrix());
-        graphics.pose().translate(anchor.x - camera.x, anchor.y - camera.y,
-                anchor.z - camera.z);
-        graphics.pose().mulPose(anchorRotation);
-        graphics.pose().scale(WORLD_SCALE, -WORLD_SCALE, WORLD_SCALE);
-        graphics.pose().translate(-panelScreen.width / 2.0F, -panelScreen.height / 2.0F, 0.0F);
+        // GuiGraphics normally uses the 2D HUD projection. A world-space panel
+        // must use the active level projection or its vertices are projected into
+        // the wrong coordinate system (typically a tiny panel near a screen corner).
+        RenderSystem.backupProjectionMatrix();
+        RenderSystem.setProjectionMatrix(event.getProjectionMatrix(), RenderSystem.getVertexSorting());
+        try {
+            GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
+            graphics.pose().translate(anchor.x - camera.x, anchor.y - camera.y,
+                    anchor.z - camera.z);
+            graphics.pose().mulPose(anchorRotation);
+            graphics.pose().scale(WORLD_SCALE, -WORLD_SCALE, WORLD_SCALE);
+            graphics.pose().translate(-panelScreen.width / 2.0F, -panelScreen.height / 2.0F, 0.0F);
 
-        double[] cursor = getMouseGuiPosition(mc);
-        double[] hovered = intersectPanel(cursor[0], cursor[1]);
-        int guiMouseX = hovered == null ? -10000 : (int) hovered[0];
-        int guiMouseY = hovered == null ? -10000 : (int) hovered[1];
-        panelScreen.renderWithTooltip(graphics, guiMouseX, guiMouseY,
-                event.getPartialTick().getGameTimeDeltaPartialTick(false));
-        graphics.flush();
+            double[] cursor = getMouseGuiPosition(mc);
+            double[] hovered = intersectPanel(cursor[0], cursor[1]);
+            int guiMouseX = hovered == null ? -10000 : (int) hovered[0];
+            int guiMouseY = hovered == null ? -10000 : (int) hovered[1];
+            panelScreen.renderWithTooltip(graphics, guiMouseX, guiMouseY,
+                    event.getPartialTick().getGameTimeDeltaPartialTick(false));
+            graphics.flush();
+        } finally {
+            RenderSystem.restoreProjectionMatrix();
+        }
     }
 
     @SubscribeEvent
