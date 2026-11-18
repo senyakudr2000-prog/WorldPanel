@@ -80,7 +80,12 @@ public final class ClientEvents {
         graphics.pose().scale(WORLD_SCALE, -WORLD_SCALE, WORLD_SCALE);
         graphics.pose().translate(-panelScreen.width / 2.0F, -panelScreen.height / 2.0F, 0.0F);
 
-        panelScreen.renderWithTooltip(graphics, -10000, -10000,
+        double mouseX = mc.mouseHandler.getScaledXPos(mc.getWindow());
+        double mouseY = mc.mouseHandler.getScaledYPos(mc.getWindow());
+        double[] hovered = intersectPanel(mouseX, mouseY);
+        double guiMouseX = hovered == null ? -10000.0D : hovered[0];
+        double guiMouseY = hovered == null ? -10000.0D : hovered[1];
+        panelScreen.renderWithTooltip(graphics, guiMouseX, guiMouseY,
                 event.getPartialTick().getGameTimeDeltaPartialTick(false));
         graphics.flush();
     }
@@ -90,17 +95,23 @@ public final class ClientEvents {
         if (!open || panelScreen == null) return;
         if (event.getButton() < 0 || event.getButton() > 2) return;
 
+        Minecraft mc = Minecraft.getInstance();
+        double mouseX = mc.mouseHandler.getScaledXPos(mc.getWindow());
+        double mouseY = mc.mouseHandler.getScaledYPos(mc.getWindow());
+
         if (event.getAction() == GLFW.GLFW_RELEASE && mouseButtonHeld
                 && heldButton == event.getButton()) {
             event.setCanceled(true);
-            panelScreen.mouseReleased(heldMouseX, heldMouseY, event.getButton());
+            double[] point = intersectPanel(mouseX, mouseY);
+            if (point == null) point = new double[] { heldMouseX, heldMouseY };
+            panelScreen.mouseReleased(point[0], point[1], event.getButton());
             mouseButtonHeld = false;
             heldButton = -1;
             return;
         }
         if (event.getAction() != GLFW.GLFW_PRESS) return;
 
-        double[] point = intersectPanel();
+        double[] point = intersectPanel(mouseX, mouseY);
         if (point == null) return;
 
         event.setCanceled(true);
@@ -110,12 +121,26 @@ public final class ClientEvents {
         heldButton = mouseButtonHeld ? event.getButton() : -1;
     }
 
-    private static double[] intersectPanel() {
+    private static double[] intersectPanel(double mouseX, double mouseY) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.gameRenderer == null) return null;
         var camera = mc.gameRenderer.getMainCamera();
         Vec3 origin = camera.getPosition();
-        Vector3f directionVector = new Vector3f(camera.getLookVector());
+        Vector3f lookVector = new Vector3f(camera.getLookVector()).normalize();
+        Vector3f upVector = new Vector3f(camera.getUpVector()).normalize();
+        Vector3f rightVector = new Vector3f(lookVector).cross(upVector).normalize();
+
+        double screenWidth = mc.getWindow().getGuiScaledWidth();
+        double screenHeight = mc.getWindow().getGuiScaledHeight();
+        double ndcX = (2.0D * mouseX / screenWidth) - 1.0D;
+        double ndcY = (2.0D * mouseY / screenHeight) - 1.0D;
+        double aspect = screenWidth / screenHeight;
+        double tanHalfFov = Math.tan(Math.toRadians(mc.options.fov().get()) * 0.5D);
+
+        Vector3f directionVector = new Vector3f(lookVector)
+                .fma((float) (ndcX * aspect * tanHalfFov), rightVector)
+                .fma((float) (-ndcY * tanHalfFov), upVector)
+                .normalize();
         Vec3 direction = new Vec3(directionVector.x, directionVector.y, directionVector.z);
 
         Vector3f normalVector = new Vector3f(0.0F, 0.0F, 1.0F).rotate(anchorRotation);
@@ -138,6 +163,19 @@ public final class ClientEvents {
     }
 
     @SubscribeEvent
+    public static void onKeyInput(InputEvent.Key event) {
+        if (!open || panelScreen == null || event.getAction() != GLFW.GLFW_PRESS) return;
+
+        int key = event.getKey();
+        if (key == GLFW.GLFW_KEY_E || key == GLFW.GLFW_KEY_ESCAPE) {
+            closePanel();
+            return;
+        }
+
+        panelScreen.keyPressed(key, event.getScanCode(), event.getModifiers());
+    }
+
+    @SubscribeEvent
     public static void onClientTick(net.neoforged.neoforge.client.event.ClientTickEvent.Post event) {
         if (!open || panelScreen == null) return;
         Minecraft mc = Minecraft.getInstance();
@@ -147,14 +185,6 @@ public final class ClientEvents {
         }
 
         panelScreen.tick();
-        long window = mc.getWindow().getWindow();
-        boolean eDown = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_E) == GLFW.GLFW_PRESS;
-        boolean escapeDown = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS;
-        if ((eDown && !lastE) || (escapeDown && !lastEscape)) {
-            closePanel();
-        }
-        lastE = eDown;
-        lastEscape = escapeDown;
     }
 
     private static void closePanel() {
