@@ -69,7 +69,7 @@ public final class ClientEvents {
 
         Vec3 camera = event.getCamera().getPosition();
         GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
-        graphics.pose().mulPoseMatrix(event.getModelViewMatrix());
+        graphics.pose().mulPose(event.getModelViewMatrix());
         graphics.pose().translate(anchor.x - camera.x, anchor.y - camera.y,
                 anchor.z - camera.z);
         graphics.pose().mulPose(anchorRotation);
